@@ -2,21 +2,21 @@
     "name": "Disboard Auto Bump",
     "version": "3.9.0",
     "description": "Not against Discord's ToS!",
-    "manifest_version": 2,
+    "manifest_version": 3,
     "icons": {"128": "images/icon_128.png"},
     "browser_specific_settings": {
       "gecko": {
         "id": "disboardautobump@block.com"
       }
     },
-    "browser_action": {
+    "action": {
         "default_icon": "images/icon.png",
         "default_popup": "popup.html"
     },
-    "permissions": ["activeTab", "storage", "webRequest", "webRequestBlocking", "notifications", "*://disboard.org/*", "tabs", "contextMenus"],
+    "permissions": ["activeTab", "storage", "notifications", "tabs", "contextMenus", "scripting", "alarms"],
+    "host_permissions": ["*://disboard.org/*"],
     "background": {
-      "scripts": ["background.js"],
-      "persistent": true
+      "service_worker": "background.js"
     },
     "content_scripts": [
         {
