@@ -1,10 +1,13 @@
 var version = "3.9.0";
 
-chrome.contextMenus.create({
-  title: "Stop auto-bumping this tab",
-  contexts: ["page"],
-  documentUrlPatterns: ["*://disboard.org/*dashboard/servers", "*://disboard.org/*dashboard/servers/", "*://disboard.org/*dashboard/servers?*", "*://disboard.org/*dashboard/servers/?"],
-  onclick: (_,tab) => chrome.tabs.executeScript(tab.id, {file: "clear_guild.js"})
+// Context menu will be created during lifecycle events to avoid duplicate creation
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (!tab || !tab.id) return;
+  chrome.scripting.executeScript({
+    target: { tabId: tab.id },
+    files: ["clear_guild.js"]
+  });
 });
 
 function compareVer(a, b) // https://stackoverflow.com/a/53387532/11037661
@@ -58,14 +61,53 @@ chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.sync.get(['safetymode'], function(data) {
     if (data.safetymode == undefined) chrome.storage.sync.set({safetymode:true});
   });
+  // Ensure an alarm exists for periodic update checks (every 6 hours)
+  chrome.alarms.create('checkUpdates', { periodInMinutes: 360 });
+  // Create context menu (stable id required for event pages/service workers)
+  try {
+    chrome.contextMenus.create({
+      id: 'stop-autobump',
+      title: 'Stop auto-bumping this tab',
+      contexts: ['page'],
+      documentUrlPatterns: [
+        '*://disboard.org/*dashboard/servers',
+        '*://disboard.org/*dashboard/servers/',
+        '*://disboard.org/*dashboard/servers?*',
+        '*://disboard.org/*dashboard/servers/?'
+      ]
+    });
+  } catch (e) {
+    // ignore duplicate id errors
+  }
   checkUpdates();
 });
 
-setInterval(function () {
-  chrome.storage.sync.get(['updates'], function(data) {
-    if (data.updates == true) checkUpdates();
-  });
-}, 21600000);
+// Also create (or ensure) the menu on browser startup
+chrome.runtime.onStartup.addListener(() => {
+  try {
+    chrome.contextMenus.create({
+      id: 'stop-autobump',
+      title: 'Stop auto-bumping this tab',
+      contexts: ['page'],
+      documentUrlPatterns: [
+        '*://disboard.org/*dashboard/servers',
+        '*://disboard.org/*dashboard/servers/',
+        '*://disboard.org/*dashboard/servers?*',
+        '*://disboard.org/*dashboard/servers/?'
+      ]
+    });
+  } catch (e) {
+    // ignore duplicate id errors
+  }
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm && alarm.name === 'checkUpdates') {
+    chrome.storage.sync.get(['updates'], function(data) {
+      if (data.updates == true) checkUpdates();
+    });
+  }
+});
 
 chrome.notifications.onClicked.addListener(function(id) {
   chrome.tabs.create({url: "https://github.com/Theblockbuster1/disboard-auto-bump"});
@@ -80,10 +122,16 @@ chrome.tabs.query({
   });
 });
 
-chrome.tabs.onUpdated.addListener({
-  url: ["*://disboard.org/*dashboard/servers", "*://disboard.org/*dashboard/servers/", "*://disboard.org/*dashboard/servers?*", "*://disboard.org/*dashboard/servers/?"]
-}, function(tabId, changeInfo) {
-  if (changeInfo.autoDiscardable == true) chrome.tabs.update(tabId,{autoDiscardable:false});
+chrome.tabs.onUpdated.addListener(function(tabId, changeInfo, tab) {
+  if (!tab || !tab.url) return;
+  const patterns = [
+    /:\/\/disboard\.org\/.*dashboard\/servers(\/|\?|$)/
+  ];
+  if (patterns.some((re) => re.test(tab.url))) {
+    if (changeInfo.autoDiscardable === true) {
+      chrome.tabs.update(tabId,{autoDiscardable:false});
+    }
+  }
 });
 
 chrome.runtime.onMessage.addListener(function(message, sender) {
